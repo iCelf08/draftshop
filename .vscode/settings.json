@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "./Mashshop"
+    ],
+    "python.terminal.activateEnvironment": false
+}
