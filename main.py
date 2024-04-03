@@ -1,116 +1,96 @@
-from typing import List, Generator
+from typing import List
 import uuid
 import uvicorn
+from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
-from fastapi import Depends, FastAPI, HTTPException, Body, Query
 
 import models
-import format
-import functions
-from db import engine, SessionLocal
+import schemas
+import crud
+from db import SessionLocal, engine
 
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-
-def get_db() -> Generator[Session, None, None]:
-    db = None
+# Dependency for getting database session
+def get_db():
+    db = SessionLocal()
     try:
-        db = SessionLocal()
         yield db
     finally:
         db.close()
 
-#UserENDPOINT---
+# User endpoints
 
-@app.post("/register", response_model=format.UserInfo)
-def create_user(user: format.UserCreate, db: Session = Depends(get_db)):
-    db_user = functions.get_user_by_email(db, email=user.email)
+@app.post("/register", response_model=schemas.User)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
         raise HTTPException(status_code=400, detail="User already registered")
-    return functions.create_user(db=db, user=user)
-
+    return crud.create_user(db=db, user=user)
 
 @app.post("/login")
-async def login_user(user: format.UserLogin, db: Session = Depends(get_db)):
-    db_user = functions.get_Login(db, email=user.email, password=user.password)
-    if db_user == False:
+async def login_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    db_user = crud.login(db, email=user.email, password=user.password)
+    if not db_user:
         raise HTTPException(status_code=400, detail="Wrong email/password")
     return {"message": "User found"}
 
-
-@app.get("/get_user/{email}", response_model=format.UserInfo)
+@app.get("/users/{email}", response_model=schemas.User)
 async def get_user(email: str, db: Session = Depends(get_db)):
-    db_user = functions.get_user_by_email(db, email=email)
+    db_user = crud.get_user_by_email(db, email=email)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
     return db_user
 
 @app.delete("/users/{email}")
 async def delete_user(email: str, db: Session = Depends(get_db)):
-    db_user = functions.delete_user(db, email)
-    if db_user is None:
+    deleted_user = crud.delete_user(db, email)
+    if not deleted_user:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "User deleted successfully"}
 
-@app.delete("/users/{email}")
-async def delete_user(email: str, db: Session = Depends(get_db)):
-    db_user = functions.delete_user(db, email)
-    if db_user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"message": "User deleted successfully"}
+# Product endpoints
 
-#ProductENDPOINTS --
-
-@app.get("/products/{id}", response_model=format.ProductInfobase)
-async def get_product(id:uuid.UUID, db: Session= Depends(get_db)):
-    db_product = functions.get_product(db,id=id)
+@app.get("/products/{id}", response_model=schemas.Product)
+async def get_product(id: uuid.UUID, db: Session = Depends(get_db)):
+    db_product = crud.get_product(db, id=id)
     if db_product is None:
-          raise HTTPException(status_code=400, detail="No Product found")
+        raise HTTPException(status_code=404, detail="Product not found")
     return db_product
 
-@app.get("/products/", response_model=List[format.ProductInfobase])
+@app.get("/products/", response_model=List[schemas.Product])
 async def get_products(db: Session = Depends(get_db)):
-    products = functions.get_products(db)
-    if products is None :
-        raise HTTPException(status_code=400 , details="No products found") 
-    return [
-        {"name": product.name, "price": product.price, "brand": product.brand}
-        for product in products
-    ]
+    products = crud.get_products(db)
+    if not products:
+        raise HTTPException(status_code=404, detail="No products found")
+    return products
 
-
-@app.post("/products/", response_model=format.ProductInfobase)
-async def add_product(name: str, price: float, brand:str, db: Session = Depends(get_db)):
-    product = format.ProductInfobase(name=name, price=price, brand=brand)
-    db_product = functions.add_product(db, product)
-    return db_product
+@app.post("/products/", response_model=schemas.Product)
+async def add_product(product: schemas.ProductAdd, db: Session = Depends(get_db)):
+    return crud.add_product(db=db, product=product)
 
 @app.delete("/products/{id}")
 async def delete_product(id: uuid.UUID, db: Session = Depends(get_db)):
-    del_product = functions.delete_product(db, id=id)
-    if del_product:
-         raise HTTPException(status_code=200, detail="Product deleted Successfully")
-    else:
-        raise HTTPException(status_code=400, detail="Product Not found to delete")
-    
+    deleted_product = crud.delete_product(db, id=id)
+    if not deleted_product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return {"message": "Product deleted successfully"}
 
+# Order endpoints
 
-
-#OrderENDPOINTS
-
-@app.post("/orders/", response_model=format.OrderInfo)
-async def set_order(order_set: format.OrderSet, db: Session = Depends(get_db)):
-    return functions.set_order(db=db, user_id=order_set.user_id, product_ids=order_set.product_ids)
+@app.post("/orders/", response_model=schemas.Order)
+async def set_order(order_set: schemas.OrderCreate, db: Session = Depends(get_db)):
+    return crud.set_order(db=db, order=order_set)
 
 
 @app.delete("/orders/{id}")
-async def delete_order(order_id:uuid.UUID, db:Session= Depends(get_db)):
-    del_order = functions.delete_order(db=db, order_id = order_id)
-    if del_order is not None:
-        return {"message": "order deleted successfully"}
-    raise HTTPException(status_code=404,detail="Order not found")
-
-
+async def delete_order(order_id: uuid.UUID, db: Session = Depends(get_db)):
+    deleted_order = crud.delete_order(db=db, order_id=order_id)
+    if not deleted_order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {"message": "Order deleted successfully"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
