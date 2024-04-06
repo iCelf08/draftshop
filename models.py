@@ -1,22 +1,39 @@
 from typing import List
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, Numeric, String, DateTime, ForeignKey
+from sqlalchemy import Column, Numeric, String, DateTime, ForeignKey, Enum
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship 
+from sqlalchemy.orm import relationship
+from schemas import PaymentMethodEnum
 from db import Base
 
+from typing import List
+import uuid
+from datetime import datetime
+from sqlalchemy import Column, Numeric, String, DateTime, ForeignKey, Enum
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from schemas import PaymentMethodEnum
+from db import Base
+
+
+#UserModel-Table
 class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    username = Column(String, unique=True)
     email = Column(String, unique=True)
-    password = Column(String)
+    hashed_password = Column(String)
     first_name = Column(String)
     last_name = Column(String)
-    
-    orders = relationship("Order", back_populates="owner")
 
+#Relationships 
+    orders = relationship("Order", back_populates="owner")
+    reviews = relationship("Review", back_populates="review_maker")  # Back-reference to reviews made by users
+
+
+#ProductModel-Table
 class Product(Base):
     __tablename__ = "products"
     
@@ -27,6 +44,10 @@ class Product(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
+#Relationship
+    reviews = relationship("Review", back_populates="product")
+
+#OrderModel-Table
 class Order(Base):
     __tablename__ = "orders"
 
@@ -34,15 +55,35 @@ class Order(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
     owner_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), index=True, default=uuid.uuid4)
+    shipping_address = Column(String) 
+    payment_method = Column(Enum(PaymentMethodEnum))
     
+#Relationships
     owner = relationship("User", back_populates="orders")
-    products = relationship("Product", secondary="order_product")
+    order_products = relationship("OrderProduct", back_populates="order")
 
+#PivoteTable: To assert Order-Product ManytoMany Relationship
 class OrderProduct(Base):
     __tablename__ = 'order_product'
 
     order_id = Column(UUID(as_uuid=True), ForeignKey('orders.id'), primary_key=True, nullable=False)
     product_id = Column(UUID(as_uuid=True), ForeignKey('products.id'), primary_key=True, nullable=False)
+    
+    #Relationships
+    order = relationship("Order", back_populates="order_products")
+    product = relationship("Product")
+    
+#ReviewModel-Table
+class Review(Base):
+    __tablename__ = 'reviews'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    product_id = Column(UUID(as_uuid=True), ForeignKey('products.id'))
+    review_content = Column(String)
+    review_maker_id = Column(UUID(as_uuid=True), ForeignKey('users.id'))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
 
-    order = relationship("Order", backref="order_product")
-    product = relationship("Product", backref="order_product")
+    # Relationships
+    product = relationship("Product", back_populates="reviews")
+    review_maker = relationship("User", back_populates="reviews")
